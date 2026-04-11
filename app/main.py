@@ -1,83 +1,56 @@
-from contextlib import asynccontextmanager
-from datetime import datetime
-from pathlib import Path
-
-from fastapi import Depends, FastAPI
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
-from app.db import Base, engine, get_db
-from app.models import User
-from app.routers import api_keys, auth, jobs, profiles, proxies
-from app.routers.auth import get_current_user
-from app.routers.system import build_dashboard_stats
-from app.utils.security import hash_password
+from app.api.router import api_router
+from app.core.config import settings
 
-settings = get_settings()
+openapi_tags = [
+    {"name": "auth", "description": "Dang nhap va lay thong tin user hien tai."},
+    {"name": "gateway-keys", "description": "Verify Gateway API key va thong tin pool/cap quyen."},
+    {"name": "users", "description": "Quan ly user va phan quyen truy cap."},
+    {"name": "vendors", "description": "Quan ly vendor, hien tai co vendor mac dinh la Google."},
+    {"name": "pools", "description": "Quan ly pool thuoc vendor, vi du Gemini API."},
+    {"name": "pool-api-keys", "description": "Quan ly API key cua provider trong pool."},
+    {"name": "api-functions", "description": "Quan ly API function thuoc pool, vi du Text Generation."},
+    {"name": "gateway", "description": "Execute Google GenAI (text/image) thong qua function code."},
+    {"name": "gateway-requests", "description": "Request history, polling trang thai va thong tin ket qua."},
+    {"name": "health", "description": "Healthcheck cho backend service."},
+    {"name": "root", "description": "Thong tin root endpoint."},
+]
 
-
-def ensure_default_admin() -> None:
-    with Session(engine) as db:
-        admin = db.query(User).filter(User.username == settings.admin_username).first()
-        if admin:
-            return
-
-        admin = User(
-            username=settings.admin_username,
-            display_name=settings.admin_display_name,
-            password_hash=hash_password(settings.admin_password),
-            is_active=True,
-            last_login_at=datetime.utcnow(),
-        )
-        db.add(admin)
-        db.commit()
-
-
-@asynccontextmanager
-async def lifespan(_: FastAPI):
-    Base.metadata.create_all(bind=engine)
-    ensure_default_admin()
-    yield
-
-
-app = FastAPI(title=settings.app_name, lifespan=lifespan)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+app = FastAPI(
+    title=settings.app_name,
+    debug=settings.debug,
+    version="0.1.0",
+    description=(
+        "Gateway Backend cung cap CRUD cho Vendor -> Pool -> API Function, "
+        "verify Gateway API key, execute Google GenAI (text/image), "
+        "doc du lieu (vendors/pools/api-functions), va request history."
+    ),
+    openapi_url=f"{settings.api_v1_prefix}/openapi.json",
+    docs_url=f"{settings.api_v1_prefix}/docs",
+    redoc_url=f"{settings.api_v1_prefix}/redoc",
+    openapi_tags=openapi_tags,
 )
 
-protected_api = [Depends(get_current_user)]
-app.include_router(auth.router, prefix="/api")
-app.include_router(profiles.router, prefix="/api", dependencies=protected_api)
-app.include_router(proxies.router, prefix="/api", dependencies=protected_api)
-app.include_router(api_keys.router, prefix="/api", dependencies=protected_api)
-app.include_router(jobs.router, prefix="/api", dependencies=protected_api)
+cors_origins = [origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()]
+if cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
 
-frontend_dist = Path(settings.frontend_dist)
-assets_dir = frontend_dist / "assets"
-if assets_dir.exists():
-    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "environment": settings.app_env}
+app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 
-@app.get("/api/dashboard")
-def dashboard(_: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return build_dashboard_stats(db)
+@app.get("/", tags=["root"])
+def root() -> dict[str, str]:
+    return {"message": "Gateway backend is running"}
 
 
-@app.get("/{full_path:path}")
-def spa_fallback(full_path: str):
-    index_file = frontend_dist / "index.html"
-    if index_file.exists():
-        return FileResponse(index_file)
-    return {"detail": f"Frontend build not found at {frontend_dist}"}
+@app.get("/up", tags=["health"])
+def up() -> dict[str, str]:
+    return {"status": "ok", "service": "gateway-be"}

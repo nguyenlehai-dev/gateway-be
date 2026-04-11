@@ -1,58 +1,174 @@
-# gateway-be
+# Gateway Backend
 
-Backend scaffold for the profile management and automation platform.
+Backend cho du an **Gateway** duoc xay dung bang `FastAPI`.
+
+Trang thai hien tai:
+
+- Da scaffold den `Phase 6` muc co ban
+- Co healthcheck `/up`
+- Co cau truc app, config, database session, SQLAlchemy models
+- Da setup Alembic cho migration
+- Da co CRUD, execute Gemini, request history, auth/rate-limit co ban, deploy skeleton
+- Da co auth bai ban voi `users`, `login`, `me`, bootstrap admin
 
 ## Stack
 
+- Python 3.12
 - FastAPI
-- SQLAlchemy
-- PostgreSQL
-- Playwright-ready automation service layer
+- SQLAlchemy 2.x
+- Alembic
+- PostgreSQL cho production
+- SQLite cho local development
 
-## Features in this scaffold
+## Cau truc chinh
 
-- Profile management for `grok`, `flow`, `dreamina`
-- Proxy management
-- API key management
-- Cookie import from `txt` and `json`
-- Basic anti-detect profile fields
-- Automation job queue model with Playwright launch previews
-
-## Quick start
-
-1. Copy env:
-
-```bash
-cp .env.example .env
+```text
+app/
+  api/
+  core/
+  db/
+  models/
+  repositories/
+  schemas/
+  services/
+  utils/
+alembic/
+tests/
 ```
 
-2. Start PostgreSQL:
+## Chay local
 
 ```bash
-docker compose up -d
-```
-
-3. Create venv and install:
-
-```bash
+cd /home/vpsroot/projects/backend/gateway-be
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
+cp .env.example .env
+alembic upgrade head
+uvicorn app.main:app --reload
 ```
 
-4. Run API:
+Luu y:
+
+- Bien moi truong cua du an dung prefix `GATEWAY_`
+- Neu may chua co `python3-venv`, co the tam thoi dung Python system de chay local
+- Auth mac dinh dang tat trong local. Bat lai bang `GATEWAY_AUTH_ENABLED=true`
+
+## Verify
 
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+curl http://127.0.0.1:8000/up
 ```
 
-## Main endpoints
+Ket qua mong doi:
 
-- `GET /health`
-- `GET /api/dashboard`
-- `GET/POST /api/profiles`
-- `POST /api/profiles/{id}/cookies`
-- `GET/POST /api/proxies`
-- `GET/POST /api/api-keys`
-- `GET/POST /api/jobs`
-- `GET /api/jobs/preview/{profile_id}`
+```json
+{
+  "status": "ok",
+  "service": "gateway-be"
+}
+```
+
+## API Docs
+
+- Swagger UI local: `http://127.0.0.1:8000/api/v1/docs`
+- ReDoc local: `http://127.0.0.1:8000/api/v1/redoc`
+- OpenAPI JSON local: `http://127.0.0.1:8000/api/v1/openapi.json`
+- Swagger UI prod: `https://gateway.plxeditor.com/api/v1/docs`
+- Swagger UI staging: `https://testgateway.plxeditor.com/api/v1/docs`
+- Tai lieu markdown: `docs/API_DOCS.md`
+
+## Testing
+
+```bash
+pytest
+```
+
+## Auth
+
+Endpoint:
+
+```bash
+POST /api/v1/auth/login
+GET /api/v1/auth/me
+```
+
+Bootstrap admin duoc tao boi:
+
+```bash
+python3 scripts/seed_auth.py
+```
+
+Env lien quan:
+
+- `GATEWAY_AUTH_ENABLED`
+- `GATEWAY_AUTH_SECRET_KEY`
+- `GATEWAY_AUTH_ACCESS_TOKEN_TTL_MINUTES`
+- `GATEWAY_BOOTSTRAP_ADMIN_USERNAME`
+- `GATEWAY_BOOTSTRAP_ADMIN_PASSWORD`
+- `GATEWAY_BOOTSTRAP_ADMIN_FULL_NAME`
+
+Vi du login:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  --data '{"username":"admin","password":"ChangeMe123!"}'
+```
+
+## Seed du lieu mac dinh
+
+```bash
+python3 scripts/seed_phase2.py
+```
+
+Seed se tao:
+
+- Vendor `Google`
+- Pool `Gemini API`
+- API Function `Text Generation`
+
+## Execute endpoint
+
+```bash
+POST /api/v1/gateway/functions/{function_code}/execute
+```
+
+Payload:
+
+```json
+{
+  "api_key": "AIza...",
+  "project_number": "123456789",
+  "model": "gemini-2.5-flash",
+  "prompt": "Hello Gemini",
+  "references_image": [],
+  "references_video": [],
+  "references_audios": []
+}
+```
+
+## Docker deploy
+
+```bash
+docker compose up -d --build
+```
+
+Hoac:
+
+```bash
+./scripts/deploy-compose.sh staging
+./scripts/deploy-compose.sh prod
+```
+
+## Phase hien tai
+
+Da xong:
+
+- Phase 0: scaffold project
+- Phase 1: database foundation
+- Phase 2: CRUD `Vendor -> Pool -> API Function`
+- Phase 3: Execute Google GenAI text generation
+- Phase 4: Request history co ban
+- Phase 5: Auth/security co ban
+- Phase 6: Docker/deploy skeleton
