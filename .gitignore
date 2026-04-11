@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env
+*.pyc
+gateway.db
+deploy/*/.env
+deploy/**/*.db
+deploy/**/*.db.*
