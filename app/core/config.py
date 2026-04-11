@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     rate_limit_enabled: bool = False
     rate_limit_requests: int = 30
     rate_limit_window_seconds: int = 60
-    provider_timeout_seconds: float = 60.0
+    provider_timeout_seconds: float = 300.0
     provider_max_retries: int = 1
     provider_retry_base_delay_seconds: float = 1.0
     sync_provider_timeout_seconds: float = 45.0

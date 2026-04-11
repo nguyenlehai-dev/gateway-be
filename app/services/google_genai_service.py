@@ -1,3 +1,4 @@
+import re
 from time import sleep
 from typing import Any
 
@@ -31,6 +32,8 @@ class GoogleGenAIService:
     """Google GenAI integration for text and image generation."""
 
     base_url = "https://generativelanguage.googleapis.com/v1beta"
+    text_min_timeout_seconds = 300.0
+    sdk_retry_status_codes = {429, 503, 504}
     text_safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -156,13 +159,14 @@ class GoogleGenAIService:
         settings = get_settings()
         resolved_max_retries = settings.provider_max_retries if max_retries is None else max_retries
         max_attempts = max(1, resolved_max_retries + 1)
+        resolved_timeout = settings.provider_timeout_seconds if timeout_seconds is None else timeout_seconds
+        resolved_timeout = max(resolved_timeout, self.text_min_timeout_seconds)
         genai.configure(api_key=payload.api_key)
         model = genai.GenerativeModel(payload.model)
         kwargs: dict[str, Any] = {
             "safety_settings": self.text_safety_settings,
+            "request_options": {"timeout": resolved_timeout},
         }
-        if timeout_seconds is not None:
-            kwargs["request_options"] = {"timeout": timeout_seconds}
 
         for attempt in range(max_attempts):
             try:
@@ -176,7 +180,7 @@ class GoogleGenAIService:
                 return self._normalize_text_sdk_response(response)
             except Exception as exc:
                 status_code = self._extract_exception_status_code(exc)
-                should_retry = status_code in {429, 503}
+                should_retry = status_code in self.sdk_retry_status_codes
                 if should_retry and attempt < max_attempts - 1:
                     sleep(settings.provider_retry_base_delay_seconds * (2**attempt))
                     continue
@@ -193,8 +197,16 @@ class GoogleGenAIService:
     @staticmethod
     def _extract_exception_status_code(exc: Exception) -> int | None:
         code = getattr(exc, "code", None)
+        if callable(code):
+            try:
+                code = code()
+            except Exception:
+                code = None
         if isinstance(code, int):
             return code
+        value = getattr(code, "value", None)
+        if isinstance(value, int):
+            return value
         status_code = getattr(exc, "status_code", None)
         if isinstance(status_code, int):
             return status_code
@@ -202,6 +214,9 @@ class GoogleGenAIService:
         response_status_code = getattr(response, "status_code", None)
         if isinstance(response_status_code, int):
             return response_status_code
+        match = re.match(r"^\s*(\d{3})\b", str(exc))
+        if match:
+            return int(match.group(1))
         return None
 
     @staticmethod
