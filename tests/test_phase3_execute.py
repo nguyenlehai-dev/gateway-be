@@ -9,6 +9,8 @@ from app.models.api_function import ApiFunction
 from app.models.pool import Pool
 from app.models.vendor import Vendor
 from app.main import app
+from app.schemas.google_genai import GatewayExecuteRequest
+from app.services.google_genai_service import GoogleGenAIService
 
 
 client = TestClient(app)
@@ -103,6 +105,37 @@ def test_execute_text_generation() -> None:
     mock_genai.GenerativeModel.assert_called_once_with("gemini-2.5-flash")
     _, generate_kwargs = mock_genai.GenerativeModel.return_value.generate_content.call_args
     assert generate_kwargs["safety_settings"][0]["threshold"] == "BLOCK_NONE"
+    assert generate_kwargs["request_options"] == {"timeout": 300.0}
+
+
+def test_text_generation_sdk_retries_provider_timeout() -> None:
+    service = GoogleGenAIService()
+    payload = GatewayExecuteRequest(
+        api_key="AIzaSyDemoKey1234567890",
+        model="gemini-2.5-flash",
+        prompt="Generate a script",
+    )
+    provider_request = service.build_text_sdk_request(payload)
+    success_response = type("Resp", (), {})()
+    success_response.to_dict = lambda: _mock_text_response("Recovered after timeout")
+
+    with patch("app.services.google_genai_service.sleep"), patch("app.services.google_genai_service.genai") as mock_genai:
+        mock_genai.GenerativeModel.return_value.generate_content.side_effect = [
+            Exception("504 The request timed out. Please try again."),
+            success_response,
+        ]
+
+        provider_response = service._generate_text_with_sdk(
+            payload,
+            provider_request,
+            timeout_seconds=60,
+            max_retries=1,
+        )
+
+    assert service._extract_text(service._extract_parts(provider_response)) == "Recovered after timeout"
+    assert mock_genai.GenerativeModel.return_value.generate_content.call_count == 2
+    _, generate_kwargs = mock_genai.GenerativeModel.return_value.generate_content.call_args
+    assert generate_kwargs["request_options"] == {"timeout": 300.0}
 
 
 def test_execute_image_generation() -> None:
