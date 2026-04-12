@@ -33,29 +33,22 @@ Khong SSH tay len server de deploy moi lan. Team lam viec thong qua Git:
 6. Promote `staging` -> `prod`
 7. GitHub Actions deploy len `gateway`
 
-## GitHub Secrets can co
+## Runner model
 
-### Backend repo secrets
+- Khong can repo secrets cho deploy nua
+- Moi repo dung self-hosted runner tren tung VM
+- Label dang dung:
+  - `gateway-dev` cho branch `staging`
+  - `gateway-prod` cho branch `prod`
 
-- `DEV_SSH_HOST`
-- `DEV_SSH_USER`
-- `DEV_SSH_KEY`
-- `DEV_BE_PATH`
-- `PROD_SSH_HOST`
-- `PROD_SSH_USER`
-- `PROD_SSH_KEY`
-- `PROD_BE_PATH`
+### Runner services hien tai
 
-### Frontend repo secrets
-
-- `DEV_SSH_HOST`
-- `DEV_SSH_USER`
-- `DEV_SSH_KEY`
-- `DEV_FE_PATH`
-- `PROD_SSH_HOST`
-- `PROD_SSH_USER`
-- `PROD_SSH_KEY`
-- `PROD_FE_PATH`
+- `VM dev`
+  - `actions.runner.nguyenlehai-dev-gateway-be.gateway-be-dev.service`
+  - `actions.runner.nguyenlehai-dev-gateway-fe.gateway-fe-dev.service`
+- `VM pro`
+  - `actions.runner.nguyenlehai-dev-gateway-be.gateway-be-prod.service`
+  - `actions.runner.nguyenlehai-dev-gateway-fe.gateway-fe-prod.service`
 
 ## Gia tri path hien tai
 
@@ -71,7 +64,9 @@ Khong SSH tay len server de deploy moi lan. Team lam viec thong qua Git:
 
 ## Luu y quan trong
 
-Frontend repo `prod` branch hien tai can duoc dong bo source day du voi `staging`/`main` truoc khi bat auto deploy prod. Neu branch `prod` chi co file toi thieu thi workflow prod se khong build duoc.
+- Frontend `prod` branch da duoc promote day du tu `staging`, co the build/deploy tu dong
+- Workflow deploy dung `git reset --hard origin/<branch>` tren repo server, vi day la working tree chuyen dung cho deploy
+- Frontend co fallback build bang Docker `node:20-bookworm` neu host khong co `npm`
 
 ## Deploy scripts
 
