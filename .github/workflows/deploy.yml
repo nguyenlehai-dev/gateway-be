@@ -22,7 +22,7 @@ jobs:
           cd /home/vpsroot/apps/gateway-staging/be
           git fetch origin
           git checkout staging
-          git pull --ff-only origin staging
+          git reset --hard origin/staging
           chmod +x scripts/deploy-compose.sh
           ./scripts/deploy-compose.sh staging
 
@@ -40,7 +40,9 @@ jobs:
           cd /home/vpsroot/apps/gateway-prod/be
           git fetch origin
           git checkout prod
-          git pull --ff-only origin prod
+          rm -rf docs/deployment
+          rm -f scripts/backup-prod-db.sh scripts/restore-prod-db.sh
+          git reset --hard origin/prod
           if [ -x scripts/backup-prod-db.sh ]; then
             ./scripts/backup-prod-db.sh
           fi
