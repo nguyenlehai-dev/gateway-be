@@ -164,6 +164,22 @@ def resolve_gateway_key_context(db: Session, gateway_api_key: str) -> GatewayKey
     return None
 
 
+def gateway_key_can_access_pool(db: Session, gateway_key: GatewayKeyContext, target_pool_id: int) -> bool:
+    if gateway_key.pool_id == target_pool_id:
+        return True
+
+    target_pool = db.get(Pool, target_pool_id)
+    return bool(
+        target_pool is not None
+        and target_pool.status == "active"
+        and target_pool.vendor_id == gateway_key.vendor_id
+    )
+
+
+def gateway_key_can_access_request(gateway_key: GatewayKeyContext, *, request_pool_id: int, request_vendor_id: int) -> bool:
+    return gateway_key.pool_id == request_pool_id or gateway_key.vendor_id == request_vendor_id
+
+
 def get_optional_gateway_key_context(
     gateway_api_key: str | None = Header(default=None, alias="X-Gateway-Api-Key"),
     db: Session = Depends(db_session),

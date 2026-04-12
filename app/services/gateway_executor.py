@@ -1,16 +1,17 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
-from time import perf_counter
+from time import perf_counter, sleep
 from uuid import uuid4
 
 import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.config import get_settings
-from app.core.security import mask_secret, resolve_gateway_key_context
+from app.core.security import gateway_key_can_access_pool, mask_secret, resolve_gateway_key_context
 from app.models.api_function import ApiFunction
 from app.models.gateway_request import GatewayRequest
 from app.models.pool import Pool
@@ -51,6 +52,27 @@ class GatewayExecutor:
         self.provider_registry = ProviderRegistry()
         self.settings = get_settings()
 
+    def _commit_with_retry(self, retries: int = 5, delay_seconds: float = 0.25) -> None:
+        for attempt in range(retries):
+            try:
+                self.db.commit()
+                return
+            except OperationalError as exc:
+                if "database is locked" not in str(exc).lower() or attempt == retries - 1:
+                    self.db.rollback()
+                    raise
+                self.db.rollback()
+                sleep(delay_seconds * (attempt + 1))
+
+    def _resolve_pool_timeout_seconds(self, pool: Pool, *, sync: bool) -> float:
+        config = pool.config_json or {}
+        configured_timeout = config.get("timeout_seconds")
+        if isinstance(configured_timeout, (int, float)) and configured_timeout > 0:
+            return float(configured_timeout)
+        if sync:
+            return self.settings.sync_provider_timeout_seconds
+        return self.settings.provider_timeout_seconds
+
     def execute(self, function_code: str, payload: GatewayExecuteRequest) -> GatewayExecuteResponse:
         if self._is_force_async_function(function_code):
             raise HTTPException(
@@ -76,7 +98,7 @@ class GatewayExecutor:
             max_attempts=payload.max_attempts,
             webhook_url=str(payload.webhook_url) if payload.webhook_url else None,
         )
-        self.db.commit()
+        self._commit_with_retry()
 
         return GatewaySubmitResponse(
             request_id=request_log.request_id,
@@ -139,7 +161,7 @@ class GatewayExecutor:
         request_log.provider_response_json = None
         request_log.output_text = None
         request_log.latency_ms = None
-        self.db.commit()
+        self._commit_with_retry()
         self.db.refresh(request_log)
         return self._build_status_response(request_log)
 
@@ -186,7 +208,7 @@ class GatewayExecutor:
             request_log.status = "failed"
             request_log.error_message = "Async execution requires a managed Pool API key"
             self._mark_job_finished(request_log)
-            self.db.commit()
+            self._commit_with_retry()
             self._deliver_webhook_if_needed(request_log)
             return self._build_status_response(request_log)
 
@@ -211,7 +233,7 @@ class GatewayExecutor:
         job_control["last_attempt_at"] = datetime.now(timezone.utc).isoformat()
         request_log.status = "processing"
         self._set_job_control(request_log, job_control)
-        self.db.commit()
+        self._commit_with_retry()
 
         started = perf_counter()
         try:
@@ -224,7 +246,7 @@ class GatewayExecutor:
                 function.provider_action,
                 provider,
                 payload,
-                timeout_seconds=self.settings.provider_timeout_seconds,
+                timeout_seconds=self._resolve_pool_timeout_seconds(pool, sync=False),
                 max_retries=self.settings.provider_max_retries,
             )
             latency_ms = int((perf_counter() - started) * 1000)
@@ -237,7 +259,7 @@ class GatewayExecutor:
             request_log.latency_ms = latency_ms
             selected_pool_api_key.last_used_at = datetime.now(timezone.utc)
             self._mark_job_finished(request_log)
-            self.db.commit()
+            self._commit_with_retry()
             self._deliver_webhook_if_needed(request_log)
             return self._build_status_response(request_log)
         except ProviderExecutionError as exc:
@@ -273,7 +295,7 @@ class GatewayExecutor:
                     },
                     "provider_error": self._normalize_provider_response(exc.provider_response),
                 }
-                self.db.commit()
+                self._commit_with_retry()
                 return self._build_status_response(request_log)
 
             request_log.status = "failed"
@@ -287,7 +309,7 @@ class GatewayExecutor:
                 },
             )
             self._mark_job_finished(request_log)
-            self.db.commit()
+            self._commit_with_retry()
             self._deliver_webhook_if_needed(request_log)
             return self._build_status_response(request_log)
 
@@ -320,7 +342,7 @@ class GatewayExecutor:
             gateway_key_context = resolve_gateway_key_context(self.db, payload.gateway_api_key)
             if gateway_key_context is None:
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid gateway API key")
-            if gateway_key_context.pool_id != pool.id:
+            if not gateway_key_can_access_pool(self.db, gateway_key_context, pool.id):
                 raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Gateway API key cannot access this pool")
             selected_pool_api_key = self._select_pool_api_key(pool.id)
             if selected_pool_api_key is None:
@@ -367,6 +389,11 @@ class GatewayExecutor:
     ) -> GatewayRequest:
         request_id = f"gw_{uuid4().hex[:12]}"
         masked_api_key = mask_secret(context.provider_api_key)
+        if context.selected_pool_api_key is not None:
+            # Reserve the managed pool key at submit time so near-simultaneous
+            # requests fan out across active keys instead of all picking the
+            # same "oldest" key before the first job finishes.
+            context.selected_pool_api_key.last_used_at = datetime.now(timezone.utc)
         payload_for_log = payload.model_dump()
         if payload_for_log.get("webhook_url") is not None:
             payload_for_log["webhook_url"] = str(payload_for_log["webhook_url"])
@@ -424,7 +451,7 @@ class GatewayExecutor:
                 context.function.provider_action,
                 context.provider,
                 provider_payload,
-                timeout_seconds=self.settings.sync_provider_timeout_seconds,
+                timeout_seconds=self._resolve_pool_timeout_seconds(context.pool, sync=True),
                 max_retries=self.settings.sync_provider_max_retries,
             )
             latency_ms = int((perf_counter() - started) * 1000)
@@ -437,7 +464,7 @@ class GatewayExecutor:
             if context.selected_pool_api_key is not None:
                 context.selected_pool_api_key.last_used_at = datetime.now(timezone.utc)
             self._mark_job_finished(request_log)
-            self.db.commit()
+            self._commit_with_retry()
 
             usage_meta = provider_response.get("usageMetadata", {})
             return GatewayExecuteResponse(
@@ -465,7 +492,7 @@ class GatewayExecutor:
             if context.selected_pool_api_key is not None:
                 context.selected_pool_api_key.last_error_at = datetime.now(timezone.utc)
             self._mark_job_finished(request_log)
-            self.db.commit()
+            self._commit_with_retry()
             response_status = self._map_provider_error_status(exc.provider_status_code)
             response_headers = {"X-Gateway-Request-Id": request_log.request_id}
             retry_after = self._extract_retry_after_seconds(exc.provider_response)
@@ -523,7 +550,7 @@ class GatewayExecutor:
 
         job_control["webhook_delivery"] = delivery_meta
         self._set_job_control(request_log, job_control)
-        self.db.commit()
+        self._commit_with_retry()
 
     def _resolve_model_name(self, provider_action: str, model: str) -> str:
         aliases = self.MODEL_ALIASES.get(provider_action, {})
@@ -602,7 +629,12 @@ class GatewayExecutor:
         stmt = (
             select(PoolApiKey)
             .where(PoolApiKey.pool_id == pool_id, PoolApiKey.status == "active")
-            .order_by(PoolApiKey.priority.asc(), PoolApiKey.id.asc())
+            .order_by(
+                PoolApiKey.last_used_at.is_not(None).asc(),
+                PoolApiKey.last_used_at.asc(),
+                PoolApiKey.priority.asc(),
+                PoolApiKey.id.asc(),
+            )
         )
         return self.db.execute(stmt).scalars().first()
 

@@ -225,8 +225,9 @@ Payload:
 
 Luu y:
 
-- `references_image`, `references_video`, `references_audios` hien tai la URL/reference context.
-- Chua phai media upload/analysis binary thuc te.
+- `references_image` voi luong `image-generation` se co gang fetch URL anh de gui vao provider nhu media reference thuc te. Neu fetch that bai, backend se giu URL do nhu text context.
+- `references_video`, `references_audios` hien tai van duoc gui nhu URL/reference text context.
+- Neu can image-to-image chac chan, uu tien dung `input_images`.
 - `model` co the nhap dong, vi du:
   - `gemini-2.5-flash`
   - `gemini-3-flash-preview`
