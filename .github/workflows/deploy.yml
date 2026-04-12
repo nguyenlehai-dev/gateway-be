@@ -8,48 +8,41 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    env:
-      TARGET_BRANCH: ${{ github.ref_name }}
+  deploy-staging:
+    if: github.ref_name == 'staging'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - gateway-dev
     steps:
-      - name: Configure SSH key
+      - name: Deploy backend on DEV
         run: |
-          mkdir -p ~/.ssh
-          if [ "${TARGET_BRANCH}" = "prod" ]; then
-            echo "${{ secrets.PROD_SSH_KEY }}" > ~/.ssh/deploy_key
-            echo "${{ secrets.PROD_SSH_HOST }}" > /tmp/deploy_host
-            echo "${{ secrets.PROD_SSH_USER }}" > /tmp/deploy_user
-            echo "${{ secrets.PROD_BE_PATH }}" > /tmp/deploy_path
-          else
-            echo "${{ secrets.DEV_SSH_KEY }}" > ~/.ssh/deploy_key
-            echo "${{ secrets.DEV_SSH_HOST }}" > /tmp/deploy_host
-            echo "${{ secrets.DEV_SSH_USER }}" > /tmp/deploy_user
-            echo "${{ secrets.DEV_BE_PATH }}" > /tmp/deploy_path
-          fi
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$(cat /tmp/deploy_host)" >> ~/.ssh/known_hosts
+          set -euo pipefail
+          cd /home/vpsroot/apps/gateway-staging/be
+          git fetch origin
+          git checkout staging
+          git pull --ff-only origin staging
+          chmod +x scripts/deploy-compose.sh
+          ./scripts/deploy-compose.sh staging
 
-      - name: Deploy backend on target VM
+  deploy-prod:
+    if: github.ref_name == 'prod'
+    runs-on:
+      - self-hosted
+      - linux
+      - x64
+      - gateway-prod
+    steps:
+      - name: Deploy backend on PROD
         run: |
-          HOST="$(cat /tmp/deploy_host)"
-          USER="$(cat /tmp/deploy_user)"
-          PATH_ON_SERVER="$(cat /tmp/deploy_path)"
-          if [ "${TARGET_BRANCH}" = "prod" ]; then
-            ENV_NAME="prod"
-            PRE_HOOK='if [ -x scripts/backup-prod-db.sh ]; then ./scripts/backup-prod-db.sh; fi'
-          else
-            ENV_NAME="staging"
-            PRE_HOOK='true'
+          set -euo pipefail
+          cd /home/vpsroot/apps/gateway-prod/be
+          git fetch origin
+          git checkout prod
+          git pull --ff-only origin prod
+          if [ -x scripts/backup-prod-db.sh ]; then
+            ./scripts/backup-prod-db.sh
           fi
-
-          ssh -i ~/.ssh/deploy_key "${USER}@${HOST}" "
-            set -euo pipefail
-            cd '${PATH_ON_SERVER}'
-            git fetch origin
-            git checkout '${TARGET_BRANCH}'
-            git pull --ff-only origin '${TARGET_BRANCH}'
-            ${PRE_HOOK}
-            chmod +x scripts/deploy-compose.sh
-            ./scripts/deploy-compose.sh '${ENV_NAME}'
-          "
+          chmod +x scripts/deploy-compose.sh
+          ./scripts/deploy-compose.sh prod
