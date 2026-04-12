@@ -187,7 +187,12 @@ def test_execute_image_generation() -> None:
     finally:
         db.close()
 
-    with patch("app.services.google_genai_service.httpx.post") as mock_post:
+    with patch("app.services.google_genai_service.httpx.get") as mock_get, patch(
+        "app.services.google_genai_service.httpx.post"
+    ) as mock_post:
+        mock_get.return_value.raise_for_status.return_value = None
+        mock_get.return_value.content = b"fake-reference-image"
+        mock_get.return_value.headers = {"content-type": "image/png"}
         mock_post.return_value.raise_for_status.return_value = None
         mock_post.return_value.json.return_value = {
             "candidates": [
@@ -216,6 +221,8 @@ def test_execute_image_generation() -> None:
                 "input_images": [],
                 "aspect_ratio": "16:9",
                 "image_size": "1K",
+                "references_image": ["https://example.com/reference.png"],
+                "references_video": ["https://example.com/video.mp4"],
             },
         )
 
@@ -232,4 +239,8 @@ def test_execute_image_generation() -> None:
         "aspect_ratio": "16:9",
         "image_size": "1K",
     }
+    parts = request_kwargs["json"]["contents"][0]["parts"]
+    assert parts[1]["inline_data"]["mime_type"] == "image/png"
+    assert parts[1]["inline_data"]["data"] == "ZmFrZS1yZWZlcmVuY2UtaW1hZ2U="
+    assert parts[2]["text"] == "Reference videos:\nhttps://example.com/video.mp4"
     assert mock_post.call_args.args[0].endswith("/models/gemini-3.1-flash-image-preview:generateContent")

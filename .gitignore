@@ -7,3 +7,4 @@ gateway.db
 deploy/*/.env
 deploy/**/*.db
 deploy/**/*.db.*
+.pytest-gateway.db

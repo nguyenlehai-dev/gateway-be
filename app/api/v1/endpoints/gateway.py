@@ -2,7 +2,14 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
-from app.core.security import AuthContext, GatewayKeyContext, enforce_rate_limit, get_optional_auth_context, require_operator_or_gateway_key
+from app.core.security import (
+    AuthContext,
+    GatewayKeyContext,
+    enforce_rate_limit,
+    gateway_key_can_access_request,
+    get_optional_auth_context,
+    require_operator_or_gateway_key,
+)
 from app.db.session import SessionLocal
 from app.schemas.google_genai import (
     GatewayExecuteRequest,
@@ -103,7 +110,11 @@ def get_request_status(
     job = executor.get_job_status(request_id)
     if isinstance(access, GatewayKeyContext):
         request_log = executor._get_request_by_request_id(request_id)
-        if request_log is None or request_log.pool_id != access.pool_id:
+        if request_log is None or not gateway_key_can_access_request(
+            access,
+            request_pool_id=request_log.pool_id,
+            request_vendor_id=request_log.vendor_id,
+        ):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gateway request not found")
     return job
 
@@ -123,7 +134,11 @@ def retry_request(
     executor = GatewayExecutor(db)
     if isinstance(access, GatewayKeyContext):
         request_log = executor._get_request_by_request_id(request_id)
-        if request_log is None or request_log.pool_id != access.pool_id:
+        if request_log is None or not gateway_key_can_access_request(
+            access,
+            request_pool_id=request_log.pool_id,
+            request_vendor_id=request_log.vendor_id,
+        ):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gateway request not found")
     response = executor.retry_request(request_id)
     if response.status == "queued":

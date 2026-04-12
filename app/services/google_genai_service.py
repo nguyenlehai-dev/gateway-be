@@ -1,6 +1,9 @@
+import base64
+import mimetypes
 import re
 from time import sleep
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 try:
@@ -34,6 +37,8 @@ class GoogleGenAIService:
     base_url = "https://generativelanguage.googleapis.com/v1beta"
     text_min_timeout_seconds = 300.0
     sdk_retry_status_codes = {429, 503, 504}
+    reference_image_limit = 4
+    reference_fetch_timeout_seconds = 20.0
     text_safety_settings = [
         {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
         {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
@@ -77,6 +82,49 @@ class GoogleGenAIService:
             "safety_settings": self.text_safety_settings,
         }
 
+    @staticmethod
+    def _guess_mime_type(url: str, response_content_type: str | None) -> str | None:
+        if response_content_type:
+            mime_type = response_content_type.split(";", 1)[0].strip().lower()
+            if mime_type.startswith("image/"):
+                return mime_type
+
+        guessed_mime_type, _ = mimetypes.guess_type(urlparse(url).path)
+        if guessed_mime_type and guessed_mime_type.startswith("image/"):
+            return guessed_mime_type
+        return None
+
+    def _load_reference_image_parts(self, payload: GatewayExecuteRequest) -> tuple[list[dict], list[str]]:
+        inline_parts: list[dict] = []
+        unresolved_urls: list[str] = []
+
+        for url in payload.references_image[: self.reference_image_limit]:
+            try:
+                response = httpx.get(url, timeout=self.reference_fetch_timeout_seconds, follow_redirects=True)
+                response.raise_for_status()
+            except httpx.HTTPError:
+                unresolved_urls.append(url)
+                continue
+
+            mime_type = self._guess_mime_type(url, response.headers.get("content-type"))
+            if not mime_type:
+                unresolved_urls.append(url)
+                continue
+
+            inline_parts.append(
+                {
+                    "inline_data": {
+                        "mime_type": mime_type,
+                        "data": base64.b64encode(response.content).decode("ascii"),
+                    }
+                }
+            )
+
+        if len(payload.references_image) > self.reference_image_limit:
+            unresolved_urls.extend(payload.references_image[self.reference_image_limit :])
+
+        return inline_parts, unresolved_urls
+
     def build_image_request(self, payload: GatewayExecuteRequest) -> dict:
         parts: list[dict] = [{"text": payload.prompt}]
         for image in payload.input_images:
@@ -88,6 +136,15 @@ class GoogleGenAIService:
                     }
                 }
             )
+
+        reference_image_parts, unresolved_reference_images = self._load_reference_image_parts(payload)
+        parts.extend(reference_image_parts)
+        if unresolved_reference_images:
+            parts.append({"text": "Reference image URLs:\n" + "\n".join(unresolved_reference_images)})
+        if payload.references_video:
+            parts.append({"text": "Reference videos:\n" + "\n".join(payload.references_video)})
+        if payload.references_audios:
+            parts.append({"text": "Reference audios:\n" + "\n".join(payload.references_audios)})
 
         request: dict = {
             "contents": [{"parts": parts}],

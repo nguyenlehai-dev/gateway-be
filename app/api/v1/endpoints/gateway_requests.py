@@ -5,7 +5,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import db_session
-from app.core.security import GatewayKeyContext, require_operator_or_gateway_key
+from app.core.security import GatewayKeyContext, gateway_key_can_access_request, require_operator_or_gateway_key
 from app.models.gateway_request import GatewayRequest
 from app.schemas.gateway_request import GatewayRequestListResponse, GatewayRequestRead
 from app.utils.crud import get_object_or_404, paginate
@@ -88,6 +88,10 @@ def get_gateway_request(
     access: object = Depends(require_operator_or_gateway_key),
 ) -> GatewayRequestRead:
     entity = get_object_or_404(db, GatewayRequest, request_id, "Gateway request")
-    if isinstance(access, GatewayKeyContext) and entity.pool_id != access.pool_id:
+    if isinstance(access, GatewayKeyContext) and not gateway_key_can_access_request(
+        access,
+        request_pool_id=entity.pool_id,
+        request_vendor_id=entity.vendor_id,
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gateway request not found")
     return entity
