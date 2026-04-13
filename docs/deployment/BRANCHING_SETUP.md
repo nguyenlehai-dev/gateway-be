@@ -1,20 +1,20 @@
-# Gateway BE Branching Setup
+# Video Processing Service BE Branching Setup
 
 Muc tieu la chuan hoa release flow cho repo backend:
 
 - `main`: branch phat trien
-- `staging`: branch test cho `testgateway.plxeditor.com`
-- `prod`: branch production cho `gateway.plxeditor.com`
+- `staging`: branch test cho `test.plxeditor.com`
+- `prod`: branch production cho `plxeditor.com`
 
 ## Cau truc thu muc
 
 - Source repo:
-  - `/home/vpsroot/projects/backend/gateway-be`
+  - `/home/vpsroot/projects/backend/video-processing-service`
 
 ## Thiet lap branch
 
 ```bash
-cd /home/vpsroot/projects/backend/gateway-be
+cd /home/vpsroot/projects/backend/video-processing-service
 git checkout main
 git pull --ff-only origin main
 git checkout -b staging
@@ -28,11 +28,11 @@ git checkout main
 ## Promote release
 
 ```bash
-cd /home/vpsroot/projects/backend/gateway-be
+cd /home/vpsroot/projects/backend/video-processing-service
 ./scripts/promote-branch.sh staging prod
 ```
 
 ## Domain mapping
 
-- `staging` -> `https://testgateway.plxeditor.com/api/`
-- `prod` -> `https://gateway.plxeditor.com/api/`
+- `staging` -> `https://test.plxeditor.com/api/`
+- `prod` -> `https://plxeditor.com/api/`

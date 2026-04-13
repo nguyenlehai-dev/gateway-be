@@ -59,15 +59,15 @@ Cloudflared:
 
 Public domains:
 
-- `gateway.plxeditor.com`
-- `testgateway.plxeditor.com`
+- `plxeditor.com`
+- `test.plxeditor.com`
 
 Current ingress model:
 
 - Cloudflare/Cloudflared vao `VM pro`
 - Reverse proxy tren `VM pro` route:
-  - `gateway.plxeditor.com` -> `192.168.100.68:8082`
-  - `testgateway.plxeditor.com` -> `192.168.100.67:8081`
+  - `plxeditor.com` -> `192.168.100.68:8082`
+  - `test.plxeditor.com` -> `192.168.100.67:8081`
 
 ## Data separation
 
@@ -113,9 +113,9 @@ Nguyen tac:
 ## Van hanh chuan
 
 1. Code va test tren `VM dev`
-2. Verify `testgateway.plxeditor.com`
+2. Verify `test.plxeditor.com`
 3. Promote code sang `VM pro`
-4. Verify `gateway.plxeditor.com`
+4. Verify `plxeditor.com`
 5. Backup dinh ky tren `VM pro`
 
 ## Health checks nhanh
@@ -125,7 +125,7 @@ Nguyen tac:
 ```bash
 docker ps
 curl -s http://127.0.0.1:18082/up
-curl -I -s https://testgateway.plxeditor.com/
+curl -I -s https://test.plxeditor.com/
 ```
 
 ### VM pro
@@ -133,6 +133,6 @@ curl -I -s https://testgateway.plxeditor.com/
 ```bash
 docker ps
 curl -s http://127.0.0.1:18081/up
-curl -I -s https://gateway.plxeditor.com/
+curl -I -s https://plxeditor.com/
 systemctl status cloudflared --no-pager
 ```

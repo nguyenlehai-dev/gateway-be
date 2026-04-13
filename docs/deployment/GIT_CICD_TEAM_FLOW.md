@@ -13,6 +13,11 @@ Khong SSH tay len server de deploy moi lan. Team lam viec thong qua Git:
 
 ## Branches
 
+## Git remotes su dung
+
+- Backend repo: `https://github.com/nguyenlehai-dev/video-processing-service`
+- Frontend repo: `https://github.com/nguyenlehai-dev/video-processing-service-fe.git`
+
 ### Backend
 
 - `staging` -> auto deploy `VM dev`
@@ -28,10 +33,10 @@ Khong SSH tay len server de deploy moi lan. Team lam viec thong qua Git:
 1. Tao branch moi tu `staging`
 2. Push code va mo PR vao `staging`
 3. Sau khi review xong, merge PR
-4. GitHub Actions deploy len `testgateway`
+4. GitHub Actions deploy len `test.plxeditor.com`
 5. QA/UAT xac nhan
 6. Promote `staging` -> `prod`
-7. GitHub Actions deploy len `gateway`
+7. GitHub Actions deploy len `plxeditor.com`
 
 ## Runner model
 
@@ -44,11 +49,11 @@ Khong SSH tay len server de deploy moi lan. Team lam viec thong qua Git:
 ### Runner services hien tai
 
 - `VM dev`
-  - `actions.runner.nguyenlehai-dev-gateway-be.gateway-be-dev.service`
-  - `actions.runner.nguyenlehai-dev-gateway-fe.gateway-fe-dev.service`
+  - `actions.runner.nguyenlehai-dev-video-processing-service.video-processing-service-dev.service`
+  - `actions.runner.nguyenlehai-dev-video-processing-service-fe.video-processing-service-fe-dev.service`
 - `VM pro`
-  - `actions.runner.nguyenlehai-dev-gateway-be.gateway-be-prod.service`
-  - `actions.runner.nguyenlehai-dev-gateway-fe.gateway-fe-prod.service`
+  - `actions.runner.nguyenlehai-dev-video-processing-service.video-processing-service-prod.service`
+  - `actions.runner.nguyenlehai-dev-video-processing-service-fe.video-processing-service-fe-prod.service`
 
 ## Gia tri path hien tai
 

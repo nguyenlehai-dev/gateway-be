@@ -7,11 +7,11 @@ TARGET="${1:-}"
 case "${TARGET}" in
   staging)
     APP_URL="http://127.0.0.1:8082"
-    PUBLIC_URL="https://testgateway.plxeditor.com"
+    PUBLIC_URL="https://test.plxeditor.com"
     ;;
   prod)
     APP_URL="http://127.0.0.1:8081"
-    PUBLIC_URL="https://gateway.plxeditor.com"
+    PUBLIC_URL="https://plxeditor.com"
     ;;
   *)
     echo "Usage: $0 <staging|prod>"
